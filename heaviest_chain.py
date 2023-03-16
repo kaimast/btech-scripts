@@ -51,7 +51,15 @@ def main():
 
         if chain_lengths[idx] % args.period_length == 0:
             assert chain_lengths[idx] > 0
-            actual = block_times[idx][-1] - block_times[idx][-args.period_length]
+
+            # We always start measuring from the end of the previous period
+            # If there is none, pick 0
+            if chain_lengths[idx] == args.period_length:
+                start = 0
+            else:
+                start = block_times[idx][-(args.period_length+1)]
+
+            actual = block_times[idx][-1] - start
             expected = args.period_length * args.block_time
             change = expected / actual
 
