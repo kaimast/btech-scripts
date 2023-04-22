@@ -12,7 +12,7 @@ from hashlib import sha3_256
 import rlp
 
 BITS_PER_NIBBLE = 4
-BRANCHING_FACTOR = 2^BITS_PER_NIBBLE
+BRANCHING_FACTOR = pow(2, BITS_PER_NIBBLE)
 
 def bytes_to_nibbles(key: bytes) -> [int]:
     assert isinstance(key, bytes)
@@ -55,12 +55,13 @@ class Branch:
 
         if child is None:
             self.children[idx] = Leaf(path, data)
-        elif isinstance(Branch, child):
+        elif isinstance(child, Branch):
             child.set(path, data)
-        elif isinstance(Extension, child):
+        elif isinstance(child, Extension):
             pos = 0
-            while len(child.path) > pos and path[0] == child.path[pos]:
+            while len(child.path) > pos and len(path) > 0 and path[0] == child.path[pos]:
                 path.pop(0)
+                pos += 1
 
             if len(child.path) == pos:
                 child.child.set(path, data)
@@ -69,22 +70,30 @@ class Branch:
                 branch.set(path, data)
                 branch.set(child.path[pos:], child.child)
 
-                newext = child.path[:pos]
-                self.children[idx] = Extension(newext, branch)
-        elif isinstance(Leaf, self.children[idx]):
-            pos = 0
-            while len(child.suffix) > pos and path[0] == child.suffix[pos]:
-                path.pop(0)
+                if pos > 0:
+                    newext = child.path[:pos]
+                    self.children[idx] = Extension(newext, branch)
+                else:
+                    self.children[idx] = branch
 
-            if len(child.suffix) == pos:
+        elif isinstance(child, Leaf):
+            pos = 0
+            while len(child.suffix) > pos and len(path) > 0 and path[0] == child.suffix[pos]:
+                path.pop(0)
+                pos += 1
+
+            if len(child.suffix) == pos and len(path) == 0:
                 child.data = data
             else:
                 branch = Branch()
-                branch.data = child.data
-                branch.set(child.path[pos:], child.child)
+                branch.set(path, data)
+                branch.set(child.suffix[pos:], child.data)
 
-                newext = child.path[:pos]
-                self.children[idx] = Extension(newext, branch)
+                if pos > 0:
+                    newext = child.suffix[:pos]
+                    self.children[idx] = Extension(newext, branch)
+                else:
+                    self.children[idx] = branch
         else:
             raise RuntimeError("Invalid state!")
 
@@ -123,6 +132,16 @@ class Branch:
     def is_sealed(self) -> bool:
         return self.hash is not None
 
+    def print(self):
+        child_idx = []
+        for (idx, child) in enumerate(self.children):
+            if child is not None:
+                child_idx.append(hex(idx))
+        print(f"Branch with children at {child_idx} and data={self.data}")
+        for child in self.children:
+            if child is not None:
+                child.print()
+
 class Extension:
     """ An extension node that compacts a part of the tree without branching """
 
@@ -142,6 +161,10 @@ class Extension:
 
         self.hash = hasher.digest()
         return self.hash
+
+    def print(self):
+        print(f"Extension with path={[hex(p) for p in self.path]}")
+        self.child.print()
 
     def get(self, path: [int]):
         if len(path) < len(self.path):
@@ -177,6 +200,9 @@ class Leaf:
 
         self.hash = hasher.digest()
         return self.hash
+
+    def print(self):
+        print(f"Leaf with suffix={[hex(s) for s in self.suffix]} and data={self.data}")
 
     def set(self, path: [int], data: bytes):
         assert self.hash is None
@@ -220,6 +246,9 @@ class PatriciaTree:
     def get(self, key: bytes):
         nkey = bytes_to_nibbles(key)
         return self.root.get(nkey)
+
+    def print(self):
+        self.root.print()
 
     def seal(self):
         return self.root.seal()
